@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Tres en Raya vs IA</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.0.0/dist/tf.min.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            margin-top: 50px; 
+        }
+        /* Cuadrícula CSS para el tablero */
+        #board { 
+            display: grid; 
+            grid-template-columns: repeat(3, 100px); 
+            gap: 5px; 
+            margin-bottom: 20px; 
+        }
+        .cell { 
+            width: 100px; 
+            height: 100px; 
+            background-color: #f0f0f0; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            font-size: 3em; 
+            cursor: pointer; 
+            border: 2px solid #333; 
+        }
+        .cell.taken { cursor: not-allowed; }
+        #status { font-size: 1.5em; font-weight: bold; margin-bottom: 20px;}
+        button { padding: 10px 20px; font-size: 1em; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <h1>Tres en Raya</h1>
+    <div id="status">Cargando modelo de IA...</div>
+    <div id="board"></div>
+    <button onclick="resetGame()">Reiniciar Juego</button>
+
+    <script>
+        let model;
+        // Estado inicial del tablero (9 ceros)
+        let boardState = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let gameActive = false;
+
+        // 1. DIBUJAR EL TABLERO EN EL DOM
+        const boardElement = document.getElementById('board');
+        for (let i = 0; i < 9; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.id = `cell-${i}`;
+            cell.onclick = () => humanPlay(i);
+            boardElement.appendChild(cell);
+        }
+
+        // 2. CARGAR EL MODELO (El método del libro)
+        async function loadModel() {
+            try {
+                // Asegúrate de que la ruta 'model/ttt_model.json' siga igual
+                model = await tf.loadLayersModel('model/ttt_model.json');
+                document.getElementById('status').innerText = '¡Tu turno! Juegas con X';
+                gameActive = true;
+            } catch (error) {
+                document.getElementById('status').innerText = 'Error cargando el modelo.';
+                console.error(error);
+            }
+        }
+
+        // 3. ACTUALIZAR LA VISTA
+        function updateBoard() {
+            for (let i = 0; i < 9; i++) {
+                const cell = document.getElementById(`cell-${i}`);
+                if (boardState[i] === 1) {
+                    cell.innerText = 'X';
+                    cell.classList.add('taken');
+                } else if (boardState[i] === -1) {
+                    cell.innerText = 'O';
+                    cell.classList.add('taken');
+                } else {
+                    cell.innerText = '';
+                    cell.classList.remove('taken');
+                }
+            }
+        }
+
+        // 4. JUGADA DEL HUMANO
+        async function humanPlay(index) {
+            // Evitar clics si el juego terminó o la casilla está ocupada
+            if (!gameActive || boardState[index] !== 0) return;
+
+            boardState[index] = 1; // 1 representa al humano
+            updateBoard();
+            
+            if (checkWinner(1)) {
+                endGame('¡Ganaste!');
+                return;
+            }
+            if (boardState.every(cell => cell !== 0)) {
+                endGame('¡Empate!');
+                return;
+            }
+
+            // Pasar turno a la IA
+            document.getElementById('status').innerText = 'La IA está pensando...';
+            gameActive = false;
+            setTimeout(aiPlay, 300); // Pequeña pausa visual
+        }
+
+        // 5. JUGADA DE LA IA (Usando TensorFlow)
+        function aiPlay() {
+            tf.tidy(() => {
+                // Convertir el estado del tablero a un tensor 2D
+                const input = tf.tensor2d([boardState]);
+                
+                // Pedirle al modelo que prediga la mejor jugada
+                const prediction = model.predict(input);
+                const probabilities = prediction.dataSync();
+
+                let bestMove = -1;
+                let highestProb = -Infinity;
+
+                // Buscar la casilla VACÍA con la mayor probabilidad asignada por el modelo
+                for (let i = 0; i < 9; i++) {
+                    if (boardState[i] === 0 && probabilities[i] > highestProb) {
+                        highestProb = probabilities[i];
+                        bestMove = i;
+                    }
+                }
+
+                if (bestMove !== -1) {
+                    boardState[bestMove] = -1; // -1 representa a la IA
+                    updateBoard();
+
+                    if (checkWinner(-1)) {
+                        endGame('La IA ha ganado.');
+                        return;
+                    }
+                    if (boardState.every(cell => cell !== 0)) {
+                        endGame('¡Empate!');
+                        return;
+                    }
+                }
+            });
+
+            document.getElementById('status').innerText = '¡Tu turno! Juegas con X';
+            gameActive = true;
+        }
+
+        // 6. COMPROBAR GANADOR
+        function checkWinner(player) {
+            const winPatterns = [
+                [0, 1, 2], [3, 4, 5], [6, 7, 8], // Horizontales
+                [0, 3, 6], [1, 4, 7], [2, 5, 8], // Verticales
+                [0, 4, 8], [2, 4, 6]             // Diagonales
+            ];
+            return winPatterns.some(pattern => {
+                return pattern.every(index => boardState[index] === player);
+            });
+        }
+
+        function endGame(message) {
+            document.getElementById('status').innerText = message;
+            gameActive = false;
+        }
+
+        function resetGame() {
+            boardState = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+            updateBoard();
+            document.getElementById('status').innerText = '¡Tu turno! Juegas con X';
+            gameActive = true;
+        }
+
+        // Iniciar el flujo
+        loadModel();
+    </script>
+</body>
+</html>
